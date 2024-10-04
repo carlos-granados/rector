@@ -7,6 +7,7 @@ use RectorPrefix202410\Nette\Utils\FileSystem as UtilsFileSystem;
 use PHPStan\Parser\ParserErrorsException;
 use Rector\Application\Provider\CurrentFileProvider;
 use Rector\Caching\Detector\ChangedFilesDetector;
+use Rector\Caching\FileDependenciesCache;
 use Rector\Configuration\Option;
 use Rector\Configuration\Parameter\SimpleParameterProvider;
 use Rector\FileSystem\FilesFinder;
@@ -80,6 +81,11 @@ final class ApplicationFileProcessor
      */
     private $missConfigurationReporter;
     /**
+     * @readonly
+     * @var \Rector\Caching\FileDependenciesCache
+     */
+    private $fileDependenciesCache;
+    /**
      * @var string
      */
     private const ARGV = 'argv';
@@ -87,7 +93,7 @@ final class ApplicationFileProcessor
      * @var SystemError[]
      */
     private $systemErrors = [];
-    public function __construct(SymfonyStyle $symfonyStyle, FilesFinder $filesFinder, ParallelFileProcessor $parallelFileProcessor, ScheduleFactory $scheduleFactory, CpuCoreCountProvider $cpuCoreCountProvider, ChangedFilesDetector $changedFilesDetector, CurrentFileProvider $currentFileProvider, \Rector\Application\FileProcessor $fileProcessor, ArrayParametersMerger $arrayParametersMerger, MissConfigurationReporter $missConfigurationReporter)
+    public function __construct(SymfonyStyle $symfonyStyle, FilesFinder $filesFinder, ParallelFileProcessor $parallelFileProcessor, ScheduleFactory $scheduleFactory, CpuCoreCountProvider $cpuCoreCountProvider, ChangedFilesDetector $changedFilesDetector, CurrentFileProvider $currentFileProvider, \Rector\Application\FileProcessor $fileProcessor, ArrayParametersMerger $arrayParametersMerger, MissConfigurationReporter $missConfigurationReporter, FileDependenciesCache $fileDependenciesCache)
     {
         $this->symfonyStyle = $symfonyStyle;
         $this->filesFinder = $filesFinder;
@@ -99,10 +105,13 @@ final class ApplicationFileProcessor
         $this->fileProcessor = $fileProcessor;
         $this->arrayParametersMerger = $arrayParametersMerger;
         $this->missConfigurationReporter = $missConfigurationReporter;
+        $this->fileDependenciesCache = $fileDependenciesCache;
     }
     public function run(Configuration $configuration, InputInterface $input) : ProcessResult
     {
-        $filePaths = $this->filesFinder->findFilesInPaths($configuration->getPaths(), $configuration);
+        $allFiles = $this->filesFinder->findFilesInPaths($configuration->getPaths(), $configuration);
+        $filePaths = $this->filesFinder->filterUnchangedFiles($allFiles);
+        $filePaths = \array_merge($filePaths, $this->findDependentFiles($allFiles, $filePaths));
         $this->missConfigurationReporter->reportVendorInPaths($filePaths);
         $this->missConfigurationReporter->reportStartWithShortOpenTag();
         // no files found
@@ -133,9 +142,10 @@ final class ApplicationFileProcessor
             $preFileCallback = null;
         }
         if ($configuration->isParallel()) {
+            $this->fileDependenciesCache->cacheAllFiles($allFiles);
             $processResult = $this->runParallel($filePaths, $input, $postFileCallback);
         } else {
-            $processResult = $this->processFiles($filePaths, $configuration, $preFileCallback, $postFileCallback);
+            $processResult = $this->processFiles($filePaths, $configuration, $allFiles, $preFileCallback, $postFileCallback);
         }
         $processResult->addSystemErrors($this->systemErrors);
         $this->restoreErrorHandler();
@@ -143,22 +153,27 @@ final class ApplicationFileProcessor
     }
     /**
      * @param string[] $filePaths
+     * @param string[] $allFiles
      * @param callable(string $file): void|null $preFileCallback
      * @param callable(int $fileCount): void|null $postFileCallback
      */
-    public function processFiles(array $filePaths, Configuration $configuration, ?callable $preFileCallback = null, ?callable $postFileCallback = null) : ProcessResult
+    public function processFiles(array $filePaths, Configuration $configuration, ?array $allFiles = null, ?callable $preFileCallback = null, ?callable $postFileCallback = null) : ProcessResult
     {
         /** @var SystemError[] $systemErrors */
         $systemErrors = [];
         /** @var FileDiff[] $fileDiffs */
         $fileDiffs = [];
+        if ($allFiles === null) {
+            $allFiles = $this->fileDependenciesCache->getAllFiles();
+        }
+        $allFiles = \array_fill_keys($allFiles, \true);
         foreach ($filePaths as $filePath) {
             if ($preFileCallback !== null) {
                 $preFileCallback($filePath);
             }
             $file = new File($filePath, UtilsFileSystem::read($filePath));
             try {
-                $fileProcessResult = $this->processFile($file, $configuration);
+                $fileProcessResult = $this->processFile($file, $allFiles, $configuration);
                 $systemErrors = $this->arrayParametersMerger->merge($systemErrors, $fileProcessResult->getSystemErrors());
                 $currentFileDiff = $fileProcessResult->getFileDiff();
                 if ($currentFileDiff instanceof FileDiff) {
@@ -178,10 +193,38 @@ final class ApplicationFileProcessor
         }
         return new ProcessResult($systemErrors, $fileDiffs);
     }
-    private function processFile(File $file, Configuration $configuration) : FileProcessResult
+    /**
+     * @param string[] $possibleDependentFiles
+     * @param string[] $filePaths
+     * @return string[]
+     */
+    private function findDependentFiles(array $possibleDependentFiles, array $filePaths) : array
+    {
+        $filesToAnalise = \array_flip($filePaths);
+        $dependentFiles = [];
+        foreach ($possibleDependentFiles as $possibleDependentFile) {
+            if (!isset($filesToAnalise[$possibleDependentFile])) {
+                $fileDependencies = $this->fileDependenciesCache->getFileDependencies($possibleDependentFile);
+                if ($fileDependencies !== null) {
+                    foreach ($fileDependencies as $fileDependency) {
+                        if (isset($filesToAnalise[$fileDependency])) {
+                            $dependentFiles[] = $possibleDependentFile;
+                            $this->changedFilesDetector->invalidateFile($possibleDependentFile);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        return $dependentFiles;
+    }
+    /**
+     * @param array<string,true> $allFiles
+     */
+    private function processFile(File $file, array $allFiles, Configuration $configuration) : FileProcessResult
     {
         $this->currentFileProvider->setFile($file);
-        $fileProcessResult = $this->fileProcessor->processFile($file, $configuration);
+        $fileProcessResult = $this->fileProcessor->processFile($file, $allFiles, $configuration);
         if ($fileProcessResult->getSystemErrors() !== []) {
             $this->changedFilesDetector->invalidateFile($file->getFilePath());
         } elseif (!$configuration->isDryRun() || !$fileProcessResult->getFileDiff() instanceof FileDiff) {

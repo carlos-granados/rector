@@ -5,14 +5,19 @@ namespace Rector\Application;
 
 use RectorPrefix202410\Nette\Utils\FileSystem;
 use RectorPrefix202410\Nette\Utils\Strings;
+use PhpParser\Node;
 use PHPStan\AnalysedCodeException;
+use PHPStan\Dependency\DependencyResolver;
 use PHPStan\Parser\ParserErrorsException;
 use Rector\Caching\Detector\ChangedFilesDetector;
+use Rector\Caching\FileDependenciesCache;
 use Rector\ChangesReporting\ValueObjectFactory\ErrorFactory;
 use Rector\ChangesReporting\ValueObjectFactory\FileDiffFactory;
 use Rector\Exception\ShouldNotHappenException;
 use Rector\FileSystem\FilePathHelper;
+use Rector\NodeTypeResolver\Node\AttributeKey;
 use Rector\NodeTypeResolver\NodeScopeAndMetadataDecorator;
+use Rector\PhpDocParser\NodeTraverser\SimpleCallableNodeTraverser;
 use Rector\PhpParser\NodeTraverser\RectorNodeTraverser;
 use Rector\PhpParser\Parser\ParserErrors;
 use Rector\PhpParser\Parser\RectorParser;
@@ -79,11 +84,26 @@ final class FileProcessor
      */
     private $nodeScopeAndMetadataDecorator;
     /**
+     * @readonly
+     * @var \PHPStan\Dependency\DependencyResolver
+     */
+    private $dependencyResolver;
+    /**
+     * @readonly
+     * @var \Rector\PhpDocParser\NodeTraverser\SimpleCallableNodeTraverser
+     */
+    private $simpleCallableNodeTraverser;
+    /**
+     * @readonly
+     * @var \Rector\Caching\FileDependenciesCache
+     */
+    private $fileDependenciesCache;
+    /**
      * @var string
      * @see https://regex101.com/r/llm7XZ/1
      */
     private const OPEN_TAG_SPACED_REGEX = '#^[ \\t]+<\\?php#m';
-    public function __construct(BetterStandardPrinter $betterStandardPrinter, RectorNodeTraverser $rectorNodeTraverser, SymfonyStyle $symfonyStyle, FileDiffFactory $fileDiffFactory, ChangedFilesDetector $changedFilesDetector, ErrorFactory $errorFactory, FilePathHelper $filePathHelper, PostFileProcessor $postFileProcessor, RectorParser $rectorParser, NodeScopeAndMetadataDecorator $nodeScopeAndMetadataDecorator)
+    public function __construct(BetterStandardPrinter $betterStandardPrinter, RectorNodeTraverser $rectorNodeTraverser, SymfonyStyle $symfonyStyle, FileDiffFactory $fileDiffFactory, ChangedFilesDetector $changedFilesDetector, ErrorFactory $errorFactory, FilePathHelper $filePathHelper, PostFileProcessor $postFileProcessor, RectorParser $rectorParser, NodeScopeAndMetadataDecorator $nodeScopeAndMetadataDecorator, DependencyResolver $dependencyResolver, SimpleCallableNodeTraverser $simpleCallableNodeTraverser, FileDependenciesCache $fileDependenciesCache)
     {
         $this->betterStandardPrinter = $betterStandardPrinter;
         $this->rectorNodeTraverser = $rectorNodeTraverser;
@@ -95,8 +115,14 @@ final class FileProcessor
         $this->postFileProcessor = $postFileProcessor;
         $this->rectorParser = $rectorParser;
         $this->nodeScopeAndMetadataDecorator = $nodeScopeAndMetadataDecorator;
+        $this->dependencyResolver = $dependencyResolver;
+        $this->simpleCallableNodeTraverser = $simpleCallableNodeTraverser;
+        $this->fileDependenciesCache = $fileDependenciesCache;
     }
-    public function processFile(File $file, Configuration $configuration) : FileProcessResult
+    /**
+     * @param array<string,true> $allFiles
+     */
+    public function processFile(File $file, array $allFiles, Configuration $configuration) : FileProcessResult
     {
         // 1. parse files to nodes
         $parsingSystemError = $this->parseFileAndDecorateNodes($file);
@@ -104,6 +130,7 @@ final class FileProcessor
             // we cannot process this file as the parsing and type resolving itself went wrong
             return new FileProcessResult([$parsingSystemError], null);
         }
+        $this->cacheFileDependencies($file, $allFiles);
         $fileHasChanged = \false;
         $filePath = $file->getFilePath();
         // 2. change nodes with Rectors
@@ -158,6 +185,24 @@ final class FileProcessor
             return new SystemError($throwable->getMessage(), $relativeFilePath, $throwable->getLine());
         }
         return null;
+    }
+    /**
+     * @param array<string,true> $allFiles
+     */
+    private function cacheFileDependencies(File $file, array $allFiles) : void
+    {
+        $fileDependencies = [];
+        $dependencyResolver = $this->dependencyResolver;
+        $this->simpleCallableNodeTraverser->traverseNodesWithCallable($file->getOldStmts(), static function (Node $node) use($dependencyResolver, $allFiles, $file, &$fileDependencies) : Node {
+            $currentScope = $node->getAttribute(AttributeKey::SCOPE);
+            if ($currentScope !== null) {
+                $dependencies = $dependencyResolver->resolveDependencies($node, $currentScope);
+                $fileDependencies = \array_merge($fileDependencies, $dependencies->getFileDependencies($file->getFilePath(), $allFiles));
+            }
+            return $node;
+        });
+        $fileDependencies = \array_values(\array_unique($fileDependencies));
+        $this->fileDependenciesCache->cacheFileDependencies($file->getFilePath(), $fileDependencies);
     }
     private function printFile(File $file, Configuration $configuration, string $filePath) : void
     {

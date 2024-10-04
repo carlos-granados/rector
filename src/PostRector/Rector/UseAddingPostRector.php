@@ -87,13 +87,13 @@ final class UseAddingPostRector extends \Rector\PostRector\Rector\AbstractPostRe
         // A. has namespace? add under it
         if ($namespace instanceof Namespace_) {
             // then add, to prevent adding + removing false positive of same short use
-            $this->useImportsAdder->addImportsToNamespace($namespace, $useImportTypes, $constantUseImportTypes, $functionUseImportTypes);
+            $this->useImportsAdder->addImportsToNamespace($namespace, $useImportTypes, $functionUseImportTypes, $constantUseImportTypes);
             return $nodes;
         }
         // B. no namespace? add in the top
         $useImportTypes = $this->filterOutNonNamespacedNames($useImportTypes);
         // then add, to prevent adding + removing false positive of same short use
-        return $this->useImportsAdder->addImportsToStmts($namespace, $nodes, $useImportTypes, $constantUseImportTypes, $functionUseImportTypes);
+        return $this->useImportsAdder->addImportsToStmts($namespace, $nodes, $useImportTypes, $functionUseImportTypes, $constantUseImportTypes);
     }
     /**
      * Prevents

@@ -57,6 +57,7 @@ abstract class AbstractRectorTestCase extends \Rector\Testing\PHPUnit\AbstractLa
         SimpleParameterProvider::setParameter(Option::AUTO_IMPORT_DOC_BLOCK_NAMES, \false);
         SimpleParameterProvider::setParameter(Option::REMOVE_UNUSED_IMPORTS, \false);
         SimpleParameterProvider::setParameter(Option::IMPORT_SHORT_CLASSES, \true);
+        SimpleParameterProvider::setParameter(Option::IMPORT_INSERT_SORTED, \false);
         SimpleParameterProvider::setParameter(Option::INDENT_CHAR, ' ');
         SimpleParameterProvider::setParameter(Option::INDENT_SIZE, 4);
         SimpleParameterProvider::setParameter(Option::POLYFILL_PACKAGES, []);
@@ -200,7 +201,7 @@ abstract class AbstractRectorTestCase extends \Rector\Testing\PHPUnit\AbstractLa
         /** @var ConfigurationFactory $configurationFactory */
         $configurationFactory = $this->make(ConfigurationFactory::class);
         $configuration = $configurationFactory->createForTests([$filePath]);
-        $processResult = $this->applicationFileProcessor->processFiles([$filePath], $configuration);
+        $processResult = $this->applicationFileProcessor->processFiles([$filePath], $configuration, []);
         // return changed file contents
         $changedFileContents = FileSystem::read($filePath);
         return new RectorTestResult($changedFileContents, $processResult);

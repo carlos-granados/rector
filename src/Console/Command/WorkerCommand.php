@@ -115,7 +115,7 @@ final class WorkerCommand extends Command
             /** @var string[] $filePaths */
             $filePaths = $json[Bridge::FILES] ?? [];
             Assert::notEmpty($filePaths);
-            $processResult = $this->applicationFileProcessor->processFiles($filePaths, $configuration, $preFileCallback);
+            $processResult = $this->applicationFileProcessor->processFiles($filePaths, $configuration, null, $preFileCallback);
             /**
              * this invokes all listeners listening $decoder->on(...) @see \Symplify\EasyParallel\Enum\ReactEvent::DATA
              */

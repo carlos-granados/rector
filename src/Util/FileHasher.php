@@ -34,6 +34,15 @@ final class FileHasher
         }
         return $configHash;
     }
+    public function resolvePath(string $filePath) : string
+    {
+        /** @var string|false $realPath */
+        $realPath = \realpath($filePath);
+        if ($realPath === \false) {
+            return $filePath;
+        }
+        return $realPath;
+    }
     private function getAlgo() : string
     {
         //see https://php.watch/articles/php-hash-benchmark

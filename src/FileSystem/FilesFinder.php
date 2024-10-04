@@ -88,8 +88,15 @@ final class FilesFinder
         // filtering files in directories collection
         $directories = $this->fileAndDirectoryFilter->filterDirectories($filesAndDirectories);
         $filteredFilePathsInDirectories = $this->findInDirectories($directories, $suffixes, $sortByName);
-        $filePaths = \array_merge($filteredFilePaths, $filteredFilePathsInDirectories);
-        return $this->unchangedFilesFilter->filterFilePaths($filePaths);
+        return \array_merge($filteredFilePaths, $filteredFilePathsInDirectories);
+    }
+    /**
+     * @param string[] $allFiles
+     * @return string[]
+     */
+    public function filterUnchangedFiles(array $allFiles) : array
+    {
+        return $this->unchangedFilesFilter->filterFilePaths($allFiles);
     }
     /**
      * @param string[] $paths

@@ -28,11 +28,17 @@ final class Skipper
      * @var \Rector\Skipper\SkipVoter\ClassSkipVoter
      */
     private $classSkipVoter;
-    public function __construct(RectifiedAnalyzer $rectifiedAnalyzer, \Rector\Skipper\Skipper\PathSkipper $pathSkipper, ClassSkipVoter $classSkipVoter)
+    /**
+     * @readonly
+     * @var \Rector\Skipper\Skipper\CommentSkipper
+     */
+    private $commentSkipper;
+    public function __construct(RectifiedAnalyzer $rectifiedAnalyzer, \Rector\Skipper\Skipper\PathSkipper $pathSkipper, ClassSkipVoter $classSkipVoter, \Rector\Skipper\Skipper\CommentSkipper $commentSkipper)
     {
         $this->rectifiedAnalyzer = $rectifiedAnalyzer;
         $this->pathSkipper = $pathSkipper;
         $this->classSkipVoter = $classSkipVoter;
+        $this->commentSkipper = $commentSkipper;
     }
     /**
      * @param string|object $element
@@ -64,6 +70,9 @@ final class Skipper
         if ($this->shouldSkipElementAndFilePath($element, $filePath)) {
             return \true;
         }
-        return $this->rectifiedAnalyzer->hasRectified($rectorClass, $node);
+        if ($this->rectifiedAnalyzer->hasRectified($rectorClass, $node)) {
+            return \true;
+        }
+        return $this->commentSkipper->shouldSkip($rectorClass, $node);
     }
 }
