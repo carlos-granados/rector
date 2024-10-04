@@ -1,3 +1,24 @@
+## Additional capabilities
+
+This is a fork of the Rector project which offers several new capabilities:
+
+### Ignore rector rules for particular lines in a file
+You can now use some annotations in comments to ignore a rector rule at a particular point in any file, without having to ignore it for the whole file.
+- `@rector-ignore-next-line` will let you skip any rector rule that might be applied to the node defined in the next line
+- `@rector-ignore RULE_NAME` will let you skip any particular rector rule that might be applied to the node defined in the next line. `RULE_NAME` needs to be the name of the class for that particular rule (for example `NumericReturnTypeFromStrictScalarReturnsRector`) and you need to add the corresponding use statement (or provide the FQN name of the rule). If you want to skip more than one rule you can list them separated with commas
+
+### Process dependent files
+When using the cache, we also process dependent files of modified files to make sure we have covered all possible needed changes.
+
+### Add option to insert use imports in sorted order
+Add a new `importInsertSorted` parameter to the `withImportNames()` config function.
+
+When this option is set to true, any new use import statements will be inserted in sorted order, including sorting within already existing use statements.
+
+Takes into account the different possible use statement types (normal, function and const). Also works for use groups, including mixed use groups.
+
+This assumes that the existing use statements are already sorted. If that is not the case, the new use statements will be sorted but it is not guaranteed that they will be sorted within the existing use statements as we do not re-order those.
+
 # Rector - Instant Upgrades and Automated Refactoring
 
 [![Downloads](https://img.shields.io/packagist/dt/rector/rector.svg?style=flat-square)](https://packagist.org/packages/rector/rector)
