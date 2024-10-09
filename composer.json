@@ -1,6 +1,6 @@
 {
-    "name": "rector/rector",
-    "description": "Instant Upgrade and Automated Refactoring of any PHP code",
+    "name": "carlos-granados/rector",
+    "description": "Instant Upgrade and Automated Refactoring of any PHP code (With extra features)",
     "license": "MIT",
     "keywords": ["dev", "refactoring", "automation", "migration"],
     "bin": [
