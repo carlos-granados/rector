@@ -17,12 +17,13 @@ use PhpParser\Node\Identifier;
 use PhpParser\Node\Stmt\Property;
 use PHPStan\Analyser\Scope;
 use PHPStan\Reflection\ClassReflection;
-use PHPStan\Type\ArrayType;
 use PHPStan\Type\MixedType;
+use PHPStan\Type\Type;
 use Rector\NodeAnalyzer\ExprAnalyzer;
 use Rector\Php\ReservedKeywordAnalyzer;
 use Rector\PhpParser\AstResolver;
-use Rector\Rector\AbstractScopeAwareRector;
+use Rector\PHPStan\ScopeFetcher;
+use Rector\Rector\AbstractRector;
 use Rector\Reflection\ReflectionResolver;
 use Rector\TypeDeclaration\TypeInferer\PropertyTypeInferer\AllAssignNodePropertyTypeInferer;
 use Symplify\RuleDocGenerator\ValueObject\CodeSample\CodeSample;
@@ -30,7 +31,7 @@ use Symplify\RuleDocGenerator\ValueObject\RuleDefinition;
 /**
  * @see \Rector\Tests\CodeQuality\Rector\Empty_\SimplifyEmptyCheckOnEmptyArrayRector\SimplifyEmptyCheckOnEmptyArrayRectorTest
  */
-final class SimplifyEmptyCheckOnEmptyArrayRector extends AbstractScopeAwareRector
+final class SimplifyEmptyCheckOnEmptyArrayRector extends AbstractRector
 {
     /**
      * @readonly
@@ -91,8 +92,9 @@ CODE_SAMPLE
     /**
      * @param Empty_|BooleanNot $node $node
      */
-    public function refactorWithScope(Node $node, Scope $scope) : ?Node
+    public function refactor(Node $node) : ?Node
     {
+        $scope = ScopeFetcher::fetch($node);
         if ($node instanceof BooleanNot) {
             if ($node->expr instanceof Empty_ && $this->isAllowedExpr($node->expr->expr, $scope)) {
                 return new NotIdentical($node->expr->expr, new Array_());
@@ -113,7 +115,7 @@ CODE_SAMPLE
     }
     private function isAllowedExpr(Expr $expr, Scope $scope) : bool
     {
-        if (!$scope->getType($expr) instanceof ArrayType) {
+        if (!$scope->getType($expr)->isArray()->yes()) {
             return \false;
         }
         if ($expr instanceof Variable) {
@@ -136,7 +138,7 @@ CODE_SAMPLE
         $phpPropertyReflection = $classReflection->getNativeProperty($propertyName);
         $nativeType = $phpPropertyReflection->getNativeType();
         if (!$nativeType instanceof MixedType) {
-            return $nativeType instanceof ArrayType;
+            return $nativeType->isArray()->yes();
         }
         $property = $this->astResolver->resolvePropertyFromPropertyReflection($phpPropertyReflection);
         /**
@@ -149,6 +151,9 @@ CODE_SAMPLE
             return \false;
         }
         $type = $this->allAssignNodePropertyTypeInferer->inferProperty($property, $classReflection, $this->file);
-        return $type instanceof ArrayType;
+        if (!$type instanceof Type) {
+            return \false;
+        }
+        return $type->isArray()->yes();
     }
 }

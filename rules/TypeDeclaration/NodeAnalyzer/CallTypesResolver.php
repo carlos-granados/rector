@@ -9,15 +9,14 @@ use PhpParser\Node\Expr\StaticCall;
 use PhpParser\Node\Identifier;
 use PHPStan\Reflection\ReflectionProvider;
 use PHPStan\Type\MixedType;
-use PHPStan\Type\NullType;
 use PHPStan\Type\ObjectType;
 use PHPStan\Type\ThisType;
 use PHPStan\Type\Type;
-use PHPStan\Type\TypeWithClassName;
 use PHPStan\Type\UnionType;
 use Rector\NodeTypeResolver\NodeTypeResolver;
 use Rector\NodeTypeResolver\PHPStan\Type\TypeFactory;
 use Rector\NodeTypeResolver\TypeComparator\TypeComparator;
+use Rector\StaticTypeMapper\Resolver\ClassNameFromObjectTypeResolver;
 final class CallTypesResolver
 {
     /**
@@ -107,7 +106,7 @@ final class CallTypesResolver
         if (\count($staticTypeByArgumentPosition) !== 1) {
             return $staticTypeByArgumentPosition;
         }
-        if (!$staticTypeByArgumentPosition[0] instanceof NullType) {
+        if (!$staticTypeByArgumentPosition[0]->isNull()->yes()) {
             return $staticTypeByArgumentPosition;
         }
         return [new MixedType()];
@@ -120,10 +119,10 @@ final class CallTypesResolver
         if (!$this->isTypeWithClassNameOnly($type)) {
             return $type;
         }
-        /** @var TypeWithClassName $firstUnionedType */
         $firstUnionedType = $type->getTypes()[0];
         foreach ($type->getTypes() as $unionedType) {
-            if (!$unionedType instanceof TypeWithClassName) {
+            $className = ClassNameFromObjectTypeResolver::resolve($unionedType);
+            if ($className === null) {
                 return $type;
             }
             if ($unionedType->isSuperTypeOf($firstUnionedType)->yes()) {
@@ -135,7 +134,8 @@ final class CallTypesResolver
     private function isTypeWithClassNameOnly(UnionType $unionType) : bool
     {
         foreach ($unionType->getTypes() as $unionedType) {
-            if (!$unionedType instanceof TypeWithClassName) {
+            $className = ClassNameFromObjectTypeResolver::resolve($unionedType);
+            if ($className === null) {
                 return \false;
             }
         }
